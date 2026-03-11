@@ -1,3 +1,59 @@
 This file is just to talk about any work you've done or any work that you know needs to be done.
 
-- Figure out what to tokenize
+Files we will need to produce:
+    - xxx.l
+    - xxx.cpp
+    - Makefile
+    - PlagarismDetector (already given)
+
+1. Design Token Set
+    - All tokens must be numeric, same length (3 digit numbers 000-999)
+    - Remove/ignore: comments, whitespaces, variable names, string literal content, numeric literal values.
+    - Assign a unique 3 digit number to each token category defined
+Ideal Token Categories:
+    - Each C keyword gets its own number: int -> 001, char -> 002, void -> 003,
+    if -> 004, else -> 005, while -> 006, for -> 007, return -> 008, etc.
+    - Identifiers (user defined names) -> all collapse to one number like 050
+    - All integer literals will collapse to one number -> like 051
+    - Operators/Punctuation each get their own unique number: "{" -> 010, "}" -> 011, "(" -> 012, ")" -> 013, ";" -> 014, etc.
+    - #include preprocessor -> one number like 090
+
+2. cmos.l (LEX Tokenizer)
+    - For eached matched pattern, print the 3 digit token number to scanner_out.txt
+    - Rules should match in order of priority:
+        - Block comments --> Discard
+        - Line comments --> Discard
+        - String literals "..." --> Discard or emit a signle STR token #
+        - Whitespaces/newlines --> Discard
+        - Keywords (longest match first) --> emit their specific number
+        - Identifiers --> emit the generic ID number
+        - Integer/float literals --> emit the generic NUM number
+        - Multi-char operators (==, !=, <=) --> emit their number
+        - Sinle char operators/Punctuation --> emit their numbers
+    - The output for one file should be a space by space sequnce of 3 digit numbers.
+
+3. Build w/ Makefile
+    - Write makefile that:
+        - Runs flex cmos.l --> produce lex.yy.c 
+        - Compiles lex.yy.c --> produces scanner executable
+        - Compiles cmos.cpp --> produces cmos executable
+    - The shell expects both ./scanner and ./cmos to exist in same dir 
+
+4. Write cmos.cpp (Winnowing comparator)
+    - Bulk of alrogithm work. Reads tokens.txt (one line per file) and impliements the winnowing algorithm.
+    - Parse tokens.txt - for each sunmission, store the filename and its token sequnce as a single concatenated digit string.
+    - Generate k-mers - slide a wqindow of length k over the digit string to produce all overlapping substrings. I pick k - since tokens are 3 digits,
+    a k-mer of k=9 covers 3 tokens, k=12 covers 4 tokens and so on.
+    - Hash each k-mer, apply a simple hash function to each k-mer string to get an integer value.
+    - Winnowing: Choose a window size w, slide a window of w consecutive hash values, the minimum hash in each window is fingerprint
+    for that window. Collect the set of all selected fingerprints for each submission.
+    - Score all pairs: Count shared fingerprints, Count total Fingerprints, similarity = shared / total
+    - Output PlagarismReport.txt: Rank all pairs from highest to lowest simularity score. Print filename pairs and thier scores.
+
+5. Run full pipeline and Tune from there
+    - run ./PlagarismDetector Examples
+    - Should tokenize all 54 .c Files, then build tokens.txt, then call cmos to produce PlagarismReport.txt
+    - Then look at the top ranked pairs. Open those .c files manually and see if they actually look copied then adjust k and w accordingly.
+    Smaller k cathes more similarity (possibly too much noise), large k is more sepcific.
+
+6. Write project report
