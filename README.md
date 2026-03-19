@@ -84,15 +84,58 @@ To build and run the project, you need:
 
 ## Build
 
-## Run
+Use the Makefile as the primary way to build, run, and test the project.
 
-After building `scanner` and `cmos`, run the detector over a directory of submissions:
+### Make Targets
+
+1. `make`
+
+- Default target (`all`)
+- Builds both executables (`scanner` and `cmos`)
+- Runs the full plagiarism pipeline on `Examples`
+
+2. `make build`
+
+- Builds only the binaries (`scanner`, `cmos`)
+- Does not run tokenization or comparison
+
+3. `make run`
+
+- Builds if needed
+- Runs `PlagarismDetector` on the configured examples directory
+- Produces `tokens.txt` and `PlagarismReport.txt`
+
+4. `make test`
+
+- Builds if needed
+- Tokenizes every file in the selected examples directory
+- Fails if tokenization output is missing/empty for any file
+- Runs the full detector and verifies `PlagarismReport.txt` exists and is non-empty
+
+5. `make clean`
+
+- Removes generated artifacts (`lex.yy.c`, `scanner`, `cmos`, `scanner_out.txt`, `tokens.txt`, `PlagarismReport.txt`)
+
+### Configure Input Directory
+
+The Makefile uses `EXAMPLES_DIR` (default: `Examples`). Override it on any run/test command:
 
 ```bash
-./PlagarismDetector Examples
+make run EXAMPLES_DIR=Examples
+make test EXAMPLES_DIR=Examples
 ```
 
-The script will:
+## Run
+
+Typical run commands:
+
+```bash
+make
+# or
+make run
+```
+
+Both commands execute this flow:
 
 1. tokenize each file in the target directory
 2. build `tokens.txt`
@@ -108,10 +151,10 @@ The script will:
 ## Example Workflow
 
 ```bash
-flex cmos.l
-gcc -o scanner lex.yy.c -lfl
-g++ -std=c++17 -o cmos cmos.cpp
-./PlagarismDetector Examples
+make clean
+make build
+make test
+make run
 ```
 
 Then inspect `PlagarismReport.txt` and manually review the highest-ranked pairs.
@@ -124,7 +167,6 @@ Then inspect `PlagarismReport.txt` and manually review the highest-ranked pairs.
 
 ## Future Improvements
 
-- add a Makefile for one-command builds
 - expand token coverage for more C constructs
 - tune k-mer and window settings based on observed false positives and false negatives
 - add sample report excerpts or evaluation notes to the documentation
