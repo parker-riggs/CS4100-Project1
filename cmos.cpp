@@ -241,6 +241,50 @@ std::vector<MatchResult> rank_matches(const std::vector<Submission>& submissions
 	return results;
 }
 
+// Keep only comparisons that involve target_file. This supports one-vs-all
+// mode when CMOS is called like: ./cmos bills_01.c
+std::vector<MatchResult> rank_matches_for_target(const std::vector<Submission>& submissions,
+		const std::string& target_file) {
+	std::vector<MatchResult> results;
+
+	for (std::size_t left_index = 0; left_index < submissions.size(); ++left_index) {
+		for (std::size_t right_index = left_index + 1; right_index < submissions.size(); ++right_index) {
+			const Submission& left = submissions[left_index];
+			const Submission& right = submissions[right_index];
+			if (left.file_name == target_file || right.file_name == target_file) {
+				results.push_back(compare_submissions(left, right));
+			}
+		}
+	}
+
+	std::sort(results.begin(), results.end(), [](const MatchResult& left, const MatchResult& right) {
+		if (left.similarity != right.similarity) {
+			return left.similarity > right.similarity;
+		}
+
+		if (left.shared_fingerprints != right.shared_fingerprints) {
+			return left.shared_fingerprints > right.shared_fingerprints;
+		}
+
+		if (left.left_file != right.left_file) {
+			return left.left_file < right.left_file;
+		}
+
+		return left.right_file < right.right_file;
+	});
+
+	return results;
+}
+
+// Accept either bare file names (bills_01.c) or paths (Examples/bills_01.c).
+std::string basename_only(const std::string& input_path) {
+	const std::size_t separator = input_path.find_last_of("/\\");
+	if (separator == std::string::npos) {
+		return input_path;
+	}
+	return input_path.substr(separator + 1);
+}
+
 // Prints a plain-text report to standard output. The provided shell script
 // redirects this output into PlagarismReport.txt.
 void print_report(const std::vector<Submission>& submissions, const std::vector<MatchResult>& results) {
@@ -273,11 +317,34 @@ void print_report(const std::vector<Submission>& submissions, const std::vector<
 
 }  // namespace
 
-int main() {
+int main(int argc, char* argv[]) {
 	// Load every tokenized submission from tokens.txt, compare all pairs, and
 	// write the ranked report to stdout.
+	if (argc > 2) {
+		std::cerr << "Usage: ./cmos [target_file]" << '\n';
+		return 1;
+	}
+
 	const std::vector<Submission> submissions = load_submissions("tokens.txt");
-	const std::vector<MatchResult> results = rank_matches(submissions);
+
+	std::vector<MatchResult> results;
+	if (argc == 2) {
+		const std::string target_file = basename_only(argv[1]);
+		const bool target_exists = std::any_of(submissions.begin(), submissions.end(),
+				[&target_file](const Submission& submission) {
+					return submission.file_name == target_file;
+				});
+
+		if (!target_exists) {
+			std::cerr << "Target file not found in tokens.txt: " << target_file << '\n';
+			return 1;
+		}
+
+		results = rank_matches_for_target(submissions, target_file);
+	} else {
+		results = rank_matches(submissions);
+	}
+
 	print_report(submissions, results);
 	return 0;
 }
