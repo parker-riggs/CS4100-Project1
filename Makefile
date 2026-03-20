@@ -25,7 +25,7 @@ $(LEX_C): $(LEX_SRC)
 	$(LEX) $(LEX_SRC)
 
 $(SCANNER): $(LEX_C)
-	$(CC) $(CFLAGS) -o $(SCANNER) $(LEX_C) -lfl
+	$(CC) $(CFLAGS) -o $(SCANNER) $(LEX_C)
 
 $(CMOS): $(CPP_SRC)
 	$(CXX) $(CXXFLAGS) -o $(CMOS) $(CPP_SRC)
