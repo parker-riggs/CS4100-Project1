@@ -2,8 +2,8 @@ LEX := flex
 CC := gcc
 CXX := g++
 
-CFLAGS ?= -O2 -Wall -Wextra
-CXXFLAGS ?= -O2 -Wall -Wextra -std=c++17
+CFLAGS ?= -O2
+CXXFLAGS ?= -O2 -std=c++17
 
 LEX_SRC := cmos.l
 LEX_C := lex.yy.c
