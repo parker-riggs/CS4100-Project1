@@ -1,0 +1,11 @@
+# Build outputs
+/cmos
+/scanner
+
+# Generated scanner source (from flex)
+/lex.yy.c
+
+# Generated runtime outputs
+/scanner_out.txt
+/tokens.txt
+/PlagarismReport.txt
