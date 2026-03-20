@@ -24,10 +24,10 @@ $(TEST_FILE):
 endif
 endif
 
-.PHONY: all build run test clean
+.PHONY: all build tokens run test clean
 
-# Default target: build tools and run the full pipeline.
-all: run
+# Default target: build tools and generate tokens.txt from EXAMPLES_DIR.
+all: tokens
 
 build: $(SCANNER) $(CMOS)
 
@@ -40,32 +40,14 @@ $(SCANNER): $(LEX_C)
 $(CMOS): $(CPP_SRC)
 	$(CXX) $(CXXFLAGS) -o $(CMOS) $(CPP_SRC)
 
-# Run full detector pipeline against EXAMPLES_DIR (default: Examples).
-run: build
-	bash ./$(DETECTOR) $(EXAMPLES_DIR)
-
-# Test target:
-# 1) Tokenize every file in EXAMPLES_DIR.
-# 2) Run CMOS once and keep only pairs that include the selected file.
-# 3) Print a plagiarism decision based on PLAGIARISM_THRESHOLD.
-# Usage: make test bills_01.c
-test: build
+# Generate tokens.txt from every file in EXAMPLES_DIR.
+tokens: build
 	@set -e; \
-	target="$(TEST_FILE)"; \
-	if [ -z "$$target" ]; then \
-		echo "[FAIL] A test file is required."; \
-		echo "Usage: make test bills_01.c"; \
-		exit 1; \
-	fi; \
-	if [ ! -f "./$(EXAMPLES_DIR)/$$target" ]; then \
-		echo "[FAIL] File not found: ./$(EXAMPLES_DIR)/$$target"; \
-		exit 1; \
-	fi; \
 	count=0; \
 	rm -f tokens.txt; \
 	for f in ./$(EXAMPLES_DIR)/*; do \
 		if [ -f "$$f" ]; then \
-			echo "[TEST] Tokenizing $${f#./$(EXAMPLES_DIR)/}"; \
+			echo "[TOKENS] Tokenizing $${f#./$(EXAMPLES_DIR)/}"; \
 			./$(SCANNER) < "$$f"; \
 			if [ ! -s scanner_out.txt ]; then \
 				echo "[FAIL] scanner_out.txt is empty after tokenizing $$f"; \
@@ -77,20 +59,31 @@ test: build
 			count=$$((count + 1)); \
 		fi; \
 	done; \
-	echo "[TEST] Tokenized $$count files successfully."; \
-	echo "[TEST] Running CMOS and filtering for $$target vs all others..."; \
-	./$(CMOS) > PlagarismReport.full.txt; \
-	awk -v target="$$target" ' \
-		NR <= 4 { print; next } \
-		/ vs / { \
-			line = $$0; \
-			sub(/^[[:space:]]*[0-9]+\.[[:space:]]*/, "", line); \
-			sub(/[[:space:]]*\|.*/, "", line); \
-			split(line, names, " vs "); \
-			if (names[1] == target || names[2] == target) print $$0; \
-		} \
-	' PlagarismReport.full.txt > PlagarismReport.txt; \
-	rm -f PlagarismReport.full.txt; \
+	echo "[TOKENS] Tokenized $$count files into tokens.txt"
+
+# Build tokens and generate the full all-vs-all report.
+run: tokens
+	./$(CMOS) > PlagarismReport.txt
+
+# Test target:
+# 1) Tokenize every file in EXAMPLES_DIR.
+# 2) Run CMOS once and keep only pairs that include the selected file.
+# 3) Print a plagiarism decision based on PLAGIARISM_THRESHOLD.
+# Usage: make test bills_01.c
+test: tokens
+	@set -e; \
+	target="$(TEST_FILE)"; \
+	if [ -z "$$target" ]; then \
+		echo "[FAIL] A test file is required."; \
+		echo "Usage: make test bills_01.c"; \
+		exit 1; \
+	fi; \
+	if [ ! -f "./$(EXAMPLES_DIR)/$$target" ]; then \
+		echo "[FAIL] File not found: ./$(EXAMPLES_DIR)/$$target"; \
+		exit 1; \
+	fi; \
+	echo "[TEST] Running CMOS for $$target vs all others..."; \
+	./$(CMOS) "$$target" > PlagarismReport.txt; \
 	if [ ! -s PlagarismReport.txt ]; then \
 		echo "[FAIL] PlagarismReport.txt was not created or is empty."; \
 		exit 1; \
