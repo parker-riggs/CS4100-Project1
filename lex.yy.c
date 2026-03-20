@@ -1,3 +1,10 @@
+/**
+ * Authors: Parker Riggs and Ayden Herring
+ * File: lex.yy.c
+ * Purpose: Contains the Flex-generated lexical scanner used by the project to
+ * tokenize source code input into normalized token output for downstream
+ * comparison in the plagiarism detection workflow.
+ **/
 
 #line 3 "lex.yy.c"
 

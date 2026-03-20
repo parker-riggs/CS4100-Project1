@@ -1,3 +1,11 @@
+/**
+ * Authors: Parker Riggs and Ayden Herring
+ * File: cmos.cpp
+ * Purpose: Implements the plagiarism detector pipeline by reading tokenized
+ * submissions, generating k-mer hashes, selecting fingerprints with winnowing,
+ * and reporting pairwise similarity scores between input files.
+ **/
+
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
@@ -9,43 +17,45 @@
 #include <utility>
 #include <vector>
 
+using namespace std;
+
 namespace {
 
 // These constants control how much token data is grouped together for each
 // comparison step. Tokens are stored as 3-digit strings, so a k-mer length of
 // 12 means each hashed chunk covers 4 tokens at a time.
-constexpr std::size_t KMER_LENGTH = 12;
-constexpr std::size_t WINDOW_SIZE = 5;
+constexpr size_t KMER_LENGTH = 12;
+constexpr size_t WINDOW_SIZE = 5;
 
 // One entry from tokens.txt. Each submission keeps the original file name, the
 // full token stream with spaces removed, and the final fingerprint set used for
 // pairwise similarity comparisons.
 struct Submission {
-	std::string file_name;
-	std::string token_stream;
-	std::unordered_set<std::uint64_t> fingerprints;
+	string file_name;
+	string token_stream;
+	unordered_set<uint64_t> fingerprints;
 };
 
 // Stores the computed similarity information for a single pair of submissions.
 // The report is built from a list of these objects and then sorted from most
 // similar to least similar.
 struct MatchResult {
-	std::string left_file;
-	std::string right_file;
-	std::size_t shared_fingerprints;
-	std::size_t total_fingerprints;
+	string left_file;
+	string right_file;
+	size_t shared_fingerprints;
+	size_t total_fingerprints;
 	double similarity;
 };
 
 // Hashes a string of token digits into a 64-bit value. This uses the FNV-1a
 // pattern because it is simple and gives a stable integer for each k-mer substring.
-std::uint64_t hash_text(const std::string& text) {
-	std::uint64_t hash_value = 1469598103934665603ULL;
+uint64_t hash_text(const string& text) {
+	uint64_t hash_value = 1469598103934665603ULL;
 
 	// Mix each character into the running hash so similar k-mers can still map
 	// to different values when even one token changes.
 	for (unsigned char character : text) {
-		hash_value ^= static_cast<std::uint64_t>(character);
+		hash_value ^= static_cast<uint64_t>(character);
 		hash_value *= 1099511628211ULL;
 	}
 
@@ -55,8 +65,8 @@ std::uint64_t hash_text(const std::string& text) {
 // Breaks the full token stream into overlapping substrings of length
 // KMER_LENGTH and hashes each one. This is the first step of the winnowing
 // process described in the project prompt.
-std::vector<std::uint64_t> build_kmer_hashes(const std::string& token_stream) {
-	std::vector<std::uint64_t> hashes;
+vector<uint64_t> build_kmer_hashes(const string& token_stream) {
+	vector<uint64_t> hashes;
 
 	// An empty token stream has no k-mers and therefore no fingerprints.
 	if (token_stream.empty()) {
@@ -75,7 +85,7 @@ std::vector<std::uint64_t> build_kmer_hashes(const std::string& token_stream) {
 
 	// Slide one character at a time across the digit string so every overlapping
 	// k-mer is included.
-	for (std::size_t index = 0; index + KMER_LENGTH <= token_stream.size(); ++index) {
+	for (size_t index = 0; index + KMER_LENGTH <= token_stream.size(); ++index) {
 		hashes.push_back(hash_text(token_stream.substr(index, KMER_LENGTH)));
 	}
 
@@ -85,9 +95,9 @@ std::vector<std::uint64_t> build_kmer_hashes(const std::string& token_stream) {
 // Applies the winnowing step: move a window over the k-mer hashes and keep the
 // minimum hash from each window as that window's fingerprint. Using a set here
 // removes duplicates so repeated minima are only counted once per submission.
-std::unordered_set<std::uint64_t> build_fingerprints(const std::string& token_stream) {
-	const std::vector<std::uint64_t> hashes = build_kmer_hashes(token_stream);
-	std::unordered_set<std::uint64_t> fingerprints;
+unordered_set<uint64_t> build_fingerprints(const string& token_stream) {
+	const vector<uint64_t> hashes = build_kmer_hashes(token_stream);
+	unordered_set<uint64_t> fingerprints;
 
 	// No hashes = no fingerprints.
 	if (hashes.empty()) {
@@ -97,23 +107,23 @@ std::unordered_set<std::uint64_t> build_fingerprints(const std::string& token_st
 	// If there are fewer hashes than one full window, choose the smallest hash in
 	// the entire list so the submission still gets one representative fingerprint.
 	if (hashes.size() <= WINDOW_SIZE) {
-		auto minimum_iterator = std::min_element(hashes.begin(), hashes.end());
+		auto minimum_iterator = min_element(hashes.begin(), hashes.end());
 		fingerprints.insert(*minimum_iterator);
 		return fingerprints;
 	}
 
 	// Tracks the previous minimum position so the same minimum is not re-added on
 	// consecutive overlapping windows unless the minimum position actually moves.
-	std::size_t previous_minimum_index = hashes.size();
+	size_t previous_minimum_index = hashes.size();
 
 	// Each pass examines one contiguous window of hash values.
-	for (std::size_t start = 0; start + WINDOW_SIZE <= hashes.size(); ++start) {
-		std::size_t minimum_index = start;
+	for (size_t start = 0; start + WINDOW_SIZE <= hashes.size(); ++start) {
+		size_t minimum_index = start;
 
 		// Find the minimum hash in the current window. Ties go to the rightmost
 		// minimum because of the <= comparison, which is a common winnowing choice.
-		for (std::size_t offset = 1; offset < WINDOW_SIZE; ++offset) {
-			const std::size_t current_index = start + offset;
+		for (size_t offset = 1; offset < WINDOW_SIZE; ++offset) {
+			const size_t current_index = start + offset;
 			if (hashes[current_index] <= hashes[minimum_index]) {
 				minimum_index = current_index;
 			}
@@ -134,25 +144,25 @@ std::unordered_set<std::uint64_t> build_fingerprints(const std::string& token_st
 // Reads tokens.txt, where each line starts with a file name followed by a list
 // of 3-digit tokens. The spaces between tokens are removed so the program can
 // treat the entire submission as one continuous digit string.
-std::vector<Submission> load_submissions(const std::string& file_path) {
-	std::ifstream input_stream(file_path);
-	std::vector<Submission> submissions;
+vector<Submission> load_submissions(const string& file_path) {
+	ifstream input_stream(file_path);
+	vector<Submission> submissions;
 
 	// If tokens.txt cannot be opened, return an empty list and let main print an
 	// empty report instead of crashing.
 	if (!input_stream) {
-		std::cerr << "Unable to open " << file_path << '\n';
+		cerr << "Unable to open " << file_path << '\n';
 		return submissions;
 	}
 
-	std::string line;
-	while (std::getline(input_stream, line)) {
+	string line;
+	while (getline(input_stream, line)) {
 		// Skip blank lines so they do not create empty submissions.
 		if (line.empty()) {
 			continue;
 		}
 
-		std::istringstream line_stream(line);
+		istringstream line_stream(line);
 		Submission submission;
 		// The first entry on each line is the original source file name.
 		line_stream >> submission.file_name;
@@ -161,7 +171,7 @@ std::vector<Submission> load_submissions(const std::string& file_path) {
 			continue;
 		}
 
-		std::string token;
+		string token;
 		// Concatenate every numeric token into a single string like
 		// "001040070..." so k-mers can be generated over the exact token sequence.
 		while (line_stream >> token) {
@@ -171,7 +181,7 @@ std::vector<Submission> load_submissions(const std::string& file_path) {
 		// Precompute fingerprints once during loading so later pairwise comparison
 		// work only has to compare sets instead of rebuilding them every time.
 		submission.fingerprints = build_fingerprints(submission.token_stream);
-		submissions.push_back(std::move(submission));
+		submissions.push_back(move(submission));
 	}
 
 	return submissions;
@@ -188,16 +198,16 @@ MatchResult compare_submissions(const Submission& left, const Submission& right)
 		? right.fingerprints
 		: left.fingerprints;
 
-	std::size_t shared_count = 0;
+	size_t shared_count = 0;
 	// Count fingerprints that appear in both submissions.
-	for (std::uint64_t fingerprint : smaller_set) {
+	for (uint64_t fingerprint : smaller_set) {
 		if (larger_set.find(fingerprint) != larger_set.end()) {
 			++shared_count;
 		}
 	}
 
 	// Set union size = |A| + |B| - |A ∩ B|.
-	const std::size_t total_count = left.fingerprints.size() + right.fingerprints.size() - shared_count;
+	const size_t total_count = left.fingerprints.size() + right.fingerprints.size() - shared_count;
 	// Guard against divide-by-zero if both submissions somehow have no
 	// fingerprints after preprocessing.
 	const double similarity = total_count == 0
@@ -209,20 +219,20 @@ MatchResult compare_submissions(const Submission& left, const Submission& right)
 
 // Generates every unique pair of submissions, computes their similarity, and
 // sorts the final results so the most suspicious pairs appear first.
-std::vector<MatchResult> rank_matches(const std::vector<Submission>& submissions) {
-	std::vector<MatchResult> results;
+vector<MatchResult> rank_matches(const vector<Submission>& submissions) {
+	vector<MatchResult> results;
 
 	// Compare every file against every file that comes after it. This avoids
 	// duplicate pairs like A vs B and B vs A, and also avoids A vs A.
-	for (std::size_t left_index = 0; left_index < submissions.size(); ++left_index) {
-		for (std::size_t right_index = left_index + 1; right_index < submissions.size(); ++right_index) {
+	for (size_t left_index = 0; left_index < submissions.size(); ++left_index) {
+		for (size_t right_index = left_index + 1; right_index < submissions.size(); ++right_index) {
 			results.push_back(compare_submissions(submissions[left_index], submissions[right_index]));
 		}
 	}
 
 	// Highest similarity should appear first. Additional tie-breakers make the
 	// output deterministic so repeated runs print pairs in the same order.
-	std::sort(results.begin(), results.end(), [](const MatchResult& left, const MatchResult& right) {
+	sort(results.begin(), results.end(), [](const MatchResult& left, const MatchResult& right) {
 		if (left.similarity != right.similarity) {
 			return left.similarity > right.similarity;
 		}
@@ -243,12 +253,12 @@ std::vector<MatchResult> rank_matches(const std::vector<Submission>& submissions
 
 // Keep only comparisons that involve target_file. This supports one-vs-all
 // mode when CMOS is called like: ./cmos bills_01.c
-std::vector<MatchResult> rank_matches_for_target(const std::vector<Submission>& submissions,
-		const std::string& target_file) {
-	std::vector<MatchResult> results;
+vector<MatchResult> rank_matches_for_target(const vector<Submission>& submissions,
+		const string& target_file) {
+	vector<MatchResult> results;
 
-	for (std::size_t left_index = 0; left_index < submissions.size(); ++left_index) {
-		for (std::size_t right_index = left_index + 1; right_index < submissions.size(); ++right_index) {
+	for (size_t left_index = 0; left_index < submissions.size(); ++left_index) {
+		for (size_t right_index = left_index + 1; right_index < submissions.size(); ++right_index) {
 			const Submission& left = submissions[left_index];
 			const Submission& right = submissions[right_index];
 			if (left.file_name == target_file || right.file_name == target_file) {
@@ -257,7 +267,7 @@ std::vector<MatchResult> rank_matches_for_target(const std::vector<Submission>& 
 		}
 	}
 
-	std::sort(results.begin(), results.end(), [](const MatchResult& left, const MatchResult& right) {
+	sort(results.begin(), results.end(), [](const MatchResult& left, const MatchResult& right) {
 		if (left.similarity != right.similarity) {
 			return left.similarity > right.similarity;
 		}
@@ -277,9 +287,9 @@ std::vector<MatchResult> rank_matches_for_target(const std::vector<Submission>& 
 }
 
 // Accept either bare file names (bills_01.c) or paths (Examples/bills_01.c).
-std::string basename_only(const std::string& input_path) {
-	const std::size_t separator = input_path.find_last_of("/\\");
-	if (separator == std::string::npos) {
+string basename_only(const string& input_path) {
+	const size_t separator = input_path.find_last_of("/\\");
+	if (separator == string::npos) {
 		return input_path;
 	}
 	return input_path.substr(separator + 1);
@@ -287,27 +297,27 @@ std::string basename_only(const std::string& input_path) {
 
 // Prints a plain-text report to standard output. The provided shell script
 // redirects this output into PlagarismReport.txt.
-void print_report(const std::vector<Submission>& submissions, const std::vector<MatchResult>& results) {
-	std::cout << "CMOS Winnowing Report\n";
-	std::cout << "Submissions analyzed: " << submissions.size() << '\n';
-	std::cout << "k-mer length: " << KMER_LENGTH << " digits\n";
-	std::cout << "window size: " << WINDOW_SIZE << " hashes\n\n";
+void print_report(const vector<Submission>& submissions, const vector<MatchResult>& results) {
+	cout << "CMOS Winnowing Report\n";
+	cout << "Submissions analyzed: " << submissions.size() << '\n';
+	cout << "k-mer length: " << KMER_LENGTH << " digits\n";
+	cout << "window size: " << WINDOW_SIZE << " hashes\n\n";
 
 	// If there are fewer than two valid submissions, there are no pairs to rank.
 	if (results.empty()) {
-		std::cout << "No comparable submission pairs found.\n";
+		cout << "No comparable submission pairs found.\n";
 		return;
 	}
 
 	// Print similarity values with a fixed number of decimal places so the report
 	// is easy to scan and compare.
-	std::cout << std::fixed << std::setprecision(4);
+	cout << fixed << setprecision(4);
 
-	for (std::size_t index = 0; index < results.size(); ++index) {
+	for (size_t index = 0; index < results.size(); ++index) {
 		const MatchResult& result = results[index];
 		// Each line contains the pair, the similarity score, and the counts used to
 		// compute that score.
-		std::cout << std::setw(2) << index + 1 << ". "
+		cout << setw(2) << index + 1 << ". "
 				  << result.left_file << " vs " << result.right_file
 				  << " | similarity=" << result.similarity
 				  << " | shared=" << result.shared_fingerprints
@@ -321,22 +331,22 @@ int main(int argc, char* argv[]) {
 	// Load every tokenized submission from tokens.txt, compare all pairs, and
 	// write the ranked report to stdout.
 	if (argc > 2) {
-		std::cerr << "Usage: ./cmos [target_file]" << '\n';
+		cerr << "Usage: ./cmos [target_file]" << '\n';
 		return 1;
 	}
 
-	const std::vector<Submission> submissions = load_submissions("tokens.txt");
+	const vector<Submission> submissions = load_submissions("tokens.txt");
 
-	std::vector<MatchResult> results;
+	vector<MatchResult> results;
 	if (argc == 2) {
-		const std::string target_file = basename_only(argv[1]);
-		const bool target_exists = std::any_of(submissions.begin(), submissions.end(),
+		const string target_file = basename_only(argv[1]);
+		const bool target_exists = any_of(submissions.begin(), submissions.end(),
 				[&target_file](const Submission& submission) {
 					return submission.file_name == target_file;
 				});
 
 		if (!target_exists) {
-			std::cerr << "Target file not found in tokens.txt: " << target_file << '\n';
+			cerr << "Target file not found in tokens.txt: " << target_file << '\n';
 			return 1;
 		}
 

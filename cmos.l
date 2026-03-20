@@ -1,3 +1,5 @@
+/* Authors: Parker Riggs and Ayden Herring */
+
 %{
 #include <stdio.h>
 
