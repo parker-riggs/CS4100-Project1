@@ -1,6 +1,6 @@
 # CS4100 Project 1
 
-CMOS is a simplified plagiarism detector for C programs. It follows the same high-level process used by MOSS-style systems:
+CMOS is a simplified plagiarism detector for C programs. It follows the same process used by MOSS style systems:
 
 1. Tokenize each C source file with Lex/Flex.
 2. Remove unimportant surface differences such as whitespace, comments, literal values, and identifier names.
@@ -16,7 +16,6 @@ This repository contains the tokenizer, the comparison engine, a driver script, 
 - `cmos.cpp`: C++ comparison program that reads `tokens.txt`, builds fingerprints, and prints a ranked report
 - `PlagarismDetector`: Bash script that runs the full pipeline over a directory of example files
 - `Examples/`: sample C submissions used to test the implementation
-- `docs/Work.txt`: working notes for the project, mostly used in early stage.
 - `Project1.pdf`: assignment specification
 
 ## How the Project Works
@@ -28,7 +27,7 @@ The scanner in `cmos.l` reads one C file at a time and emits a sequence of numer
 - ignores whitespace
 - ignores line and block comments
 - maps preprocessor include lines to a token
-- maps control-flow keywords to tokens
+- maps control flow keywords to tokens
 - maps basic types to tokens
 - maps string and character literals to generic literal tokens
 - maps identifiers to one generic identifier token
@@ -48,11 +47,29 @@ The program then:
 
 1. removes spaces between tokens to form one continuous digit string
 2. builds overlapping k-mers from that digit string
-3. hashes each k-mer into a 64-bit value
+3. hashes each k-mer into a 64 bit value
 4. slides a window across those hashes
 5. selects the minimum hash in each window as a fingerprint
 
 These fingerprints are used as the basis for similarity comparison.
+
+#### What K-mer Length and Window Size Mean
+
+Current settings in `cmos.cpp`:
+
+- `KMER_LENGTH = 12` (digits)
+- `WINDOW_SIZE = 5` (hashes)
+
+Because each token is stored as a 3 digit code, `KMER_LENGTH = 12` means each k-mer spans 4 tokens.
+
+Fingerprint creation process:
+
+1. Build overlapping 12 digit substrings from the token stream.
+2. Hash each substring into a 64 bit value.
+3. Slide a window of 5 hash values across that sequence.
+4. Select the minimum hash in each window as a fingerprint (rightmost minimum on ties).
+
+This is the winnowing step. It keeps a compact set of representative hashes so files can be compared efficiently.
 
 ### 3. Pairwise Comparison
 
@@ -65,6 +82,18 @@ For every unique pair of submissions, `cmos.cpp`:
 
 The final report is written to `PlagarismReport.txt` by redirecting the program's standard output.
 
+#### What `shared` and `total` Mean in Output
+
+For a line like:
+
+`bills_01.c vs bills_22.c | similarity=0.7544 | shared=86 | total=114`
+
+- `shared`: number of fingerprints present in both files (set intersection)
+- `total`: number of unique fingerprints across both files (set union)
+- `similarity`: `shared / total`
+
+In this example, `86 / 114 = 0.7544`.
+
 ## Current Parameters
 
 The current comparison settings in `cmos.cpp` are:
@@ -72,7 +101,7 @@ The current comparison settings in `cmos.cpp` are:
 - `KMER_LENGTH = 12`
 - `WINDOW_SIZE = 5`
 
-Because tokens are stored as 3-digit values, a k-mer length of 12 corresponds to 4 tokens per hashed chunk.
+Because tokens are stored as 3 digit values, a k-mer length of 12 corresponds to 4 tokens per hashed chunk.
 
 ## Requirements
 
@@ -92,7 +121,8 @@ Use the Makefile as the primary way to build, run, and test the project.
 
 - Default target (`all`)
 - Builds both executables (`scanner` and `cmos`)
-- Runs the full plagiarism pipeline on `Examples`
+- Tokenizes every file in `Examples` and generates `tokens.txt`
+- Does not run `cmos` automatically
 
 2. `make build`
 
@@ -101,16 +131,15 @@ Use the Makefile as the primary way to build, run, and test the project.
 
 3. `make run`
 
-- Builds if needed
-- Runs `PlagarismDetector` on the configured examples directory
-- Produces `tokens.txt` and `PlagarismReport.txt`
+- Builds and tokenizes if needed
+- Runs `./cmos` in all vs all mode
+- Produces `PlagarismReport.txt`
 
 4. `make test bills_01.c`
 
-- Builds if needed
+- Builds and tokenizes if needed
 - Requires one selected file name after `test` (for example `bills_01.c`)
-- Tokenizes every file in the selected examples directory
-- Runs `cmos` and filters the report to only `bills_01.c vs other_file.c` pairs
+- Runs `./cmos bills_01.c` for one vs all comparisons
 - Prints a final plagiarism decision for the selected file using a similarity threshold
 
 5. `make clean`
@@ -139,13 +168,33 @@ make
 make run
 ```
 
-Both commands execute this flow:
+`make` executes this flow:
 
-1. Each .c file in the examples folder is tokenized into a normalized token stream.
-2. Those token streams are then converted into fingerprint sets via k-mers and winnowing.
-3. CMOS is then ran and compares every unique file pair in an all-vs-all manner instead of just one file.
-4. For each pair, it computes similarities as shared fingerprints / total fingerprints.
-5. All pairs are then sorted highest similarity first and written to PlagarismReport.txt
+1. builds `scanner` and `cmos`
+2. tokenizes all files in `Examples/`
+3. writes `tokens.txt`
+
+Then run comparisons with:
+
+```bash
+./cmos
+```
+
+`make run` executes the full flow in one command:
+
+1. builds and tokenizes as above
+2. runs `./cmos` for all vs all comparison
+3. writes sorted results to `PlagarismReport.txt`
+
+## Compare One File Against All Others
+
+After `make`, run:
+
+```bash
+./cmos bills_01.c
+```
+
+This compares `bills_01.c` against every other tokenized file and prints only those pairs.
 
 ## Test One File Against All Others
 
@@ -158,9 +207,9 @@ make test bills_01.c
 This test flow does the following:
 
 1. verifies that `Examples/bills_01.c` exists
-2. tokenizes all files in `Examples/`
-3. runs `cmos` once for all pairwise comparisons
-4. keeps only report lines that include `bills_01.c`
+2. builds and tokenizes all files in `Examples/`
+3. runs `./cmos bills_01.c`
+4. writes one-vs-all output to `PlagarismReport.txt`
 5. prints one of these result messages:
 	- `Potential plagiarism detected in bills_01.c ...`
 	- `No plagiarism detected in bills_01.c ...`
@@ -172,26 +221,3 @@ Important: `[PASS]` means the pipeline ran successfully. The plagiarism verdict 
 - `scanner_out.txt`: token output for the most recently scanned file
 - `tokens.txt`: one line per submission, combining the filename and its token stream
 - `PlagarismReport.txt`: ranked similarity report for all file pairs
-
-## Example Workflow
-
-```bash
-make clean
-make build
-make test bills_01.c
-make run
-```
-
-Then inspect `PlagarismReport.txt` and manually review the highest-ranked pairs.
-
-## Notes
-
-- The script and report use the existing repository spelling `PlagarismDetector` and `PlagarismReport.txt`.
-- The tokenizer is intentionally simplified for the assignment and does not aim to fully parse all of C.
-- The example corpus in `Examples/` is the intended test set for this project.
-
-## Future Improvements
-
-- expand token coverage for more C constructs
-- tune k-mer and window settings based on observed false positives and false negatives
-- add sample report excerpts or evaluation notes to the documentation
