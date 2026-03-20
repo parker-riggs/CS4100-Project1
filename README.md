@@ -105,29 +105,33 @@ Use the Makefile as the primary way to build, run, and test the project.
 - Runs `PlagarismDetector` on the configured examples directory
 - Produces `tokens.txt` and `PlagarismReport.txt`
 
-4. `make test`
+4. `make test bills_01.c`
 
 - Builds if needed
+- Requires one selected file name after `test` (for example `bills_01.c`)
 - Tokenizes every file in the selected examples directory
-- Fails if tokenization output is missing/empty for any file
-- Runs the full detector and verifies `PlagarismReport.txt` exists and is non-empty
+- Runs `cmos` and filters the report to only `bills_01.c vs other_file.c` pairs
+- Prints a final plagiarism decision for the selected file using a similarity threshold
 
 5. `make clean`
 
 - Removes generated artifacts (`lex.yy.c`, `scanner`, `cmos`, `scanner_out.txt`, `tokens.txt`, `PlagarismReport.txt`)
 
-### Configure Input Directory
+### Configure Input Directory and Threshold
 
-The Makefile uses `EXAMPLES_DIR` (default: `Examples`). Override it on any run/test command:
+The Makefile uses `EXAMPLES_DIR` (default: `Examples`) and `PLAGIARISM_THRESHOLD` (default: `0.80`).
+
+Override them on any run/test command:
 
 ```bash
 make run EXAMPLES_DIR=Examples
-make test EXAMPLES_DIR=Examples
+make test bills_01.c EXAMPLES_DIR=Examples
+make test bills_01.c PLAGIARISM_THRESHOLD=0.70
 ```
 
 ## Run
 
-Typical run commands:
+Typical full-corpus run commands:
 
 ```bash
 make
@@ -137,10 +141,31 @@ make run
 
 Both commands execute this flow:
 
-1. tokenize each file in the target directory
-2. build `tokens.txt`
-3. run `cmos`
-4. write the ranked output to `PlagarismReport.txt`
+1. Each .c file in the examples folder is tokenized into a normalized token stream.
+2. Those token streams are then converted into fingerprint sets via k-mers and winnowing.
+3. CMOS is then ran and compares every unique file pair in an all-vs-all manner instead of just one file.
+4. For each pair, it computes similarities as shared fingerprints / total fingerprints.
+5. All pairs are then sorted highest similarity first and written to PlagarismReport.txt
+
+## Test One File Against All Others
+
+Use this command style:
+
+```bash
+make test bills_01.c
+```
+
+This test flow does the following:
+
+1. verifies that `Examples/bills_01.c` exists
+2. tokenizes all files in `Examples/`
+3. runs `cmos` once for all pairwise comparisons
+4. keeps only report lines that include `bills_01.c`
+5. prints one of these result messages:
+	- `Potential plagiarism detected in bills_01.c ...`
+	- `No plagiarism detected in bills_01.c ...`
+
+Important: `[PASS]` means the pipeline ran successfully. The plagiarism verdict is the `[RESULT]` line.
 
 ## Output Files
 
@@ -153,7 +178,7 @@ Both commands execute this flow:
 ```bash
 make clean
 make build
-make test
+make test bills_01.c
 make run
 ```
 
